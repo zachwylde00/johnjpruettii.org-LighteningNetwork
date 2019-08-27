@@ -154,12 +154,47 @@ message SendToRouteRequest {
 
     /// Route that should be used to attempt to complete the payment.
     lnrpc.Route route = 2;
+
+    /**
+    Timeout in seconds used for pre-pay probing. If set to zero, no probing
+    will take place.
+    */
+    int32 probe_timeout = 3;
 }
 
 message SendToRouteResponse {
     /// The preimage obtained by making the payment.
     bytes preimage = 1;
 
+    /// The failure message in case the payment failed.
+    Failure failure = 2;
+}
+
+message ProbeRouteRequest {
+    /**
+    The total amount in millisatoshis.
+    */
+    int64 total_amt_msat = 1;
+
+    /**
+    The CLTV delta from the current height that should be used to set the
+    timelock for the final hop.
+    */
+    int32 final_cltv_delta = 2;
+
+    /**
+    List of channels that form the route to probe.
+    */
+    repeated uint64 route_channels = 3;
+
+    /**
+    Timeout in seconds used for pre-pay probing. If set to zero, no probing
+    will take place.
+    */
+    int32 per_hop_timeout = 4;
+}
+
+message ProbeRouteResponse {
     /// The failure message in case the payment failed.
     Failure failure = 2;
 }
@@ -194,6 +229,12 @@ message Failure {
         TEMPORARY_NODE_FAILURE = 19;
         PERMANENT_NODE_FAILURE = 20;
         PERMANENT_CHANNEL_FAILURE = 21;
+
+        /**
+        Pre-pay probing detected a stuck htlc on the outgoing link of the node
+        indicated by failure_source_index
+        */
+        STUCK_HTLC = 997;
 
         /**
         The error source is known, but the failure itself couldn't be decoded.
@@ -397,4 +438,6 @@ service Router {
     It is a development feature.
     */
     rpc QueryMissionControl(QueryMissionControlRequest) returns (QueryMissionControlResponse);
+
+    rpc ProbeRoute(ProbeRouteRequest) returns (ProbeRouteResponse);
 }

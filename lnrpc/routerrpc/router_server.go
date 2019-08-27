@@ -4,11 +4,13 @@ package routerrpc
 
 import (
 	"context"
+	"crypto/rand"
 	"errors"
 	"fmt"
 	"io/ioutil"
 	"os"
 	"path/filepath"
+	"time"
 
 	"github.com/btcsuite/btcutil"
 	"github.com/lightningnetwork/lnd/channeldb"
@@ -53,6 +55,10 @@ var (
 			Action: "write",
 		}},
 		"/routerrpc.Router/SendToRoute": {{
+			Entity: "offchain",
+			Action: "write",
+		}},
+		"/routerrpc.Router/ProbeRoute": {{
 			Entity: "offchain",
 			Action: "write",
 		}},
@@ -301,6 +307,113 @@ func (s *Server) SendToRoute(ctx context.Context,
 	}, nil
 }
 
+type errTimeout struct {
+	failureSourceIdx int
+}
+
+func (f errTimeout) Error() string {
+	return fmt.Sprintf("payment attempt timeout at index %v",
+		f.failureSourceIdx)
+}
+
+func (s *Server) probeSingleRoute(rt *route.Route,
+	timeout time.Duration) error {
+
+	var hash lntypes.Hash
+	if _, err := rand.Read(hash[:]); err != nil {
+		return err
+	}
+
+	errChan := make(chan error)
+	go func() {
+		_, err := s.cfg.Router.SendToRoute(hash, rt)
+		errChan <- err
+	}()
+
+	select {
+	case err := <-errChan:
+		return err
+	case <-time.After(timeout):
+		// When the htlc gets stuck, assume that it is stuck in the last
+		// channel. This assumes that this function is only called for
+		// routes of which all channels except the last one were
+		// successfully probed before.
+		return errTimeout{
+			failureSourceIdx: len(rt.Hops) - 1,
+		}
+	}
+}
+
+func isProbeSuccess(err error) bool {
+	fErr, ok := err.(*htlcswitch.ForwardingError)
+	if !ok {
+		return false
+	}
+
+	_, ok = fErr.FailureMessage.(*lnwire.FailUnknownPaymentHash)
+	return ok
+}
+
+func (s *Server) ProbeRoute(ctx context.Context,
+	req *ProbeRouteRequest) (*ProbeRouteResponse, error) {
+
+	amt := lnwire.MilliSatoshi(req.TotalAmtMsat)
+	chanIDs := req.RouteChannels
+	source := s.cfg.RouterBackend.SelfNode
+	finalCltvDelta := req.FinalCltvDelta
+
+	log.Debugf("Probe call received")
+
+	probe := func(l int, amt lnwire.MilliSatoshi) error {
+		route, err := s.cfg.Router.BuildRoute(
+			source, amt, chanIDs[:l], finalCltvDelta,
+		)
+		if err != nil {
+			return err
+		}
+
+		timeout := time.Second *
+			time.Duration(req.PerHopTimeout*int32(l))
+
+		err = s.probeSingleRoute(route, timeout)
+
+		log.Debugf("Probing %v with timeout %v: %v",
+			route, timeout, err)
+
+		return err
+	}
+
+	for l := 1; l <= len(chanIDs); l++ {
+		// Do pre-probes with the minimal amount.
+		err := probe(l, 0)
+
+		if isProbeSuccess(err) {
+			// Attempt longer routes
+			continue
+		}
+
+		rpcErr, err := marshallError(err)
+		if err != nil {
+			return nil, err
+		}
+
+		return &ProbeRouteResponse{
+			Failure: rpcErr,
+		}, nil
+	}
+
+	// Do the final probe with the full amount.
+	err := probe(len(chanIDs), amt)
+	rpcErr, err := marshallError(err)
+	if err != nil {
+		return nil, err
+	}
+
+	return &ProbeRouteResponse{
+		Failure: rpcErr,
+	}, nil
+}
+
 // marshallError marshall an error as received from the switch to rpc structs
 // suitable for returning to the caller of an rpc method.
 //
@@ -313,6 +426,13 @@ func marshallError(sendError error) (*Failure, error) {
 	if sendError == htlcswitch.ErrUnreadableFailureMessage {
 		response.Code = Failure_UNREADABLE_FAILURE
 		return response, nil
+	}
+
+	if timeoutErr, ok := sendError.(errTimeout); ok {
+		return &Failure{
+			Code:               Failure_STUCK_HTLC,
+			FailureSourceIndex: uint32(timeoutErr.failureSourceIdx),
+		}, nil
 	}
 
 	fErr, ok := sendError.(*htlcswitch.ForwardingError)

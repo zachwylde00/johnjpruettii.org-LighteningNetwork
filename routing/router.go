@@ -2505,24 +2505,21 @@ func generateBandwidthHints(sourceNode *channeldb.LightningNode,
 func (r *ChannelRouter) BuildRoute(source route.Vertex, amt lnwire.MilliSatoshi,
 	chanIDs []uint64, finalCltvDelta int32) (*route.Route, error) {
 
-	edges := make([]*channeldb.ChannelEdgePolicy, 0)
-
-	chanInfo, err := r.cfg.Graph.FetchChanInfos(chanIDs)
-	if err != nil {
-		return nil, err
-	}
-
-	policies := make([]*channeldb.ChannelEdgePolicy, len(chanIDs))
+	edges := make([]*channeldb.ChannelEdgePolicy, len(chanIDs))
 	from := source
-	for i, info := range chanInfo {
+	for i, chanID := range chanIDs {
+		info, policy1, policy2, err := r.cfg.Graph.FetchChannelEdgesByID(chanID)
+		if err != nil {
+			return nil, fmt.Errorf("unknown channel %v: %v", chanIDs[i], err)
+		}
 		var policy *channeldb.ChannelEdgePolicy
 		switch {
-		case info.Info.NodeKey1Bytes == from:
-			policy = info.Policy1
-			from = info.Info.NodeKey2Bytes
-		case info.Info.NodeKey2Bytes == from:
-			policy = info.Policy2
-			from = info.Info.NodeKey1Bytes
+		case info.NodeKey1Bytes == from:
+			policy = policy1
+			from = info.NodeKey2Bytes
+		case info.NodeKey2Bytes == from:
+			policy = policy2
+			from = info.NodeKey1Bytes
 		default:
 			return nil, errors.New("disconnected channel sequence")
 		}
@@ -2531,7 +2528,7 @@ func (r *ChannelRouter) BuildRoute(source route.Vertex, amt lnwire.MilliSatoshi,
 			return nil, errors.New("unknown channel policy")
 		}
 
-		policies[i] = policy
+		edges[i] = policy
 	}
 
 	_, height, err := r.cfg.Chain.GetBestBlock()
@@ -2546,6 +2543,6 @@ func (r *ChannelRouter) BuildRoute(source route.Vertex, amt lnwire.MilliSatoshi,
 
 	return newRoute(
 		amt, r.selfNode.PubKeyBytes, edges, uint32(height),
-		uint16(finalCltvDelta), nil,
+		uint16(finalCltvDelta),
 	)
 }
