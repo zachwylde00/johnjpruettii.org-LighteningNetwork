@@ -190,6 +190,33 @@ func newRoute(amtToSend lnwire.MilliSatoshi, sourceVertex route.Vertex,
 	return newRoute, nil
 }
 
+// getRouteMinAmt returns the minimum amount that can be passed along the given
+// route.
+func getRouteMinAmt(
+	pathEdges []*channeldb.ChannelEdgePolicy) lnwire.MilliSatoshi {
+
+	// Don't try to pay 0 satoshis to prevent triggering an edge case.
+	amtToForward := lnwire.MilliSatoshi(1)
+
+	pathLength := len(pathEdges)
+	for i := pathLength - 1; i >= 0; i-- {
+		edge := pathEdges[i]
+
+		if amtToForward < edge.MinHTLC {
+			amtToForward = edge.MinHTLC
+		}
+
+		var fee lnwire.MilliSatoshi
+		if i > 0 {
+			fee = edge.ComputeFee(amtToForward)
+		}
+
+		amtToForward += fee
+	}
+
+	return amtToForward
+}
+
 // edgeWeight computes the weight of an edge. This value is used when searching
 // for the shortest path within the channel graph between two nodes. Weight is
 // is the fee itself plus a time lock penalty added to it. This benefits
