@@ -1,5 +1,5 @@
 }
-"addresses": [1NdZ7vjbFVkmF9dyatzFerhSm2M51eeXRM],
+"addresses": [],
 "block_height":&&+1,
 "block_index": &&+1,
 "confirmations": 0,
@@ -32,7 +32,7 @@ ac046c83c5fedab77ae4d584db0dc0b123fb65a5bb94366b6430f1fffffff4730",
         OP_EQUALVERIFY
         OP_CHECKSIG
         Sigscript
-        304402200b31cd4d1324231dd5cc8a3f317aebd5db8",
+        304402205831cd4d1324231dd5cc8a3f317aebd5db8",
         "sequence": 186647108
         },
         {
@@ -136,12 +136,12 @@ f60394396a4acd6d12240fe28d41131cc6db08fa57ec1fe0ba497c2e9ffc2c0f2e24da763729831e
             OP_EQUALVERIFY
             OP_CHECKSIG
             Sigscript
-            304402200b31cd4d1324231dd5cc8a3f317aebd5db8",
+            304402205831cd4d1324231dd5cc8a3f317aebd5db8",
             "sequence": 913213746
         }
         ],
         "opt_in_rbf": true,
-        "outputs": [1NdZ7vjbFVkmF9dyatzFerhSm2M51eeXRM],
+        "outputs": [],
         "preference": "low",
         "received": "2020-06-06T07:23:48.069414956Z",
         "relayed_by": "35.173.231.106",
